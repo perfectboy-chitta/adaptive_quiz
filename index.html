@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adaptive Intelligence Quiz Game</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for the results graph -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* A simple fade-in animation for a smoother experience */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out forwards;
+        }
+        /* Custom styles for answer buttons */
+        .answer-btn {
+            transition: all 0.2s ease;
+        }
+        .answer-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        .answer-btn.correct {
+            background-color: #22c55e !important; /* Tailwind green-500 */
+            color: white !important;
+            border-color: #16a34a !important;
+        }
+        .answer-btn.incorrect {
+            background-color: #ef4444 !important; /* Tailwind red-500 */
+            color: white !important;
+            border-color: #dc2626 !important;
+        }
+        .answer-btn.disabled {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-2xl mx-auto bg-white rounded-xl shadow-lg p-6 md:p-8">
+        
+        <!-- Header -->
+        <div class="text-center border-b pb-4 mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">Where Data Meets Intelligence</h1>
+            <p class="text-gray-500 mt-1">The Adaptive Intelligence Quiz</p>
+        </div>
+
+        <!-- Setup Screen -->
+        <div id="setup-screen" class="fade-in">
+            <h2 class="text-xl font-semibold text-center mb-4">Choose Your Challenge</h2>
+            <div class="space-y-4">
+                <div>
+                    <label for="category-select" class="block text-sm font-medium text-gray-700 mb-1">Category:</label>
+                    <select id="category-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                        <option>Loading categories...</option>
+                    </select>
+                </div>
+                <button id="start-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    Start Quiz
+                </button>
+            </div>
+        </div>
+
+        <!-- Quiz Screen -->
+        <div id="quiz-screen" class="hidden fade-in">
+            <div class="flex justify-between items-center mb-4">
+                <div id="question-counter" class="text-sm font-semibold text-gray-600">Question 1 / 7</div>
+                <div id="difficulty-tracker" class="px-3 py-1 text-sm font-bold text-white rounded-full">MEDIUM</div>
+            </div>
+            <div class="bg-gray-50 p-4 rounded-lg min-h-[100px] flex items-center justify-center mb-4">
+                 <p id="question-text" class="text-center text-lg font-medium text-gray-800"></p>
+            </div>
+            <div id="options-container" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <!-- Answer buttons will be generated here by JavaScript -->
+            </div>
+            <div id="feedback-area" class="text-center mt-4 font-semibold h-6"></div>
+        </div>
+
+        <!-- Summary Screen -->
+        <div id="summary-screen" class="hidden fade-in">
+            <h2 class="text-2xl font-bold text-center text-gray-800 mb-4">Quiz Summary</h2>
+            <div class="bg-gray-50 rounded-lg p-6 space-y-4">
+                <div class="text-center">
+                    <p class="text-lg text-gray-600">Final Score</p>
+                    <p id="final-score" class="text-5xl font-extrabold text-blue-600"></p>
+                </div>
+                <div class="text-center">
+                    <p class="text-sm text-gray-500">Your Intelligence Level</p>
+                    <p id="intelligence-rating" class="text-xl font-semibold text-gray-800"></p>
+                </div>
+                <div class="border-t pt-4">
+                    <p class="text-sm font-medium text-gray-600 mb-2">Difficulty Trend:</p>
+                    <div id="difficulty-trend" class="text-center text-sm font-mono bg-gray-200 p-2 rounded"></div>
+                </div>
+            </div>
+            <div class="mt-6">
+                <canvas id="accuracy-chart" width="400" height="200"></canvas>
+            </div>
+            <button id="play-again-btn" class="mt-6 w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-800 transition-transform transform hover:scale-105">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+<script>
+    
+document.addEventListener('DOMContentLoaded', () => {
+
+    const API_CATEGORY_URL = "https://opentdb.com/api_category.php";
+    const API_QUESTION_URL = "https://opentdb.com/api.php";
+    const TOTAL_QUESTIONS = 7;
+    const RETRY_FETCHES = 3;
+
+    const setupScreen = document.getElementById('setup-screen');
+    const quizScreen = document.getElementById('quiz-screen');
+    const summaryScreen = document.getElementById('summary-screen');
+    
+    const categorySelect = document.getElementById('category-select');
+    const startBtn = document.getElementById('start-btn');
+    const playAgainBtn = document.getElementById('play-again-btn');
+
+    const questionCounter = document.getElementById('question-counter');
+    const difficultyTracker = document.getElementById('difficulty-tracker');
+    const questionText = document.getElementById('question-text');
+    const optionsContainer = document.getElementById('options-container');
+    const feedbackArea = document.getElementById('feedback-area');
+    
+    const finalScoreEl = document.getElementById('final-score');
+    const ratingEl = document.getElementById('intelligence-rating');
+    const trendEl = document.getElementById('difficulty-trend');
+    const accuracyChartCtx = document.getElementById('accuracy-chart').getContext('2d');
+    let accuracyChart;
+
+    let score = 0;
+    let currentQuestionIndex = 0;
+    let difficulty = 'medium';
+    let difficultyHistory = [];
+    // FIX: Initialize stats object fully at the start
+    let stats = {
+        easy: { asked: 0, correct: 0 },
+        medium: { asked: 0, correct: 0 },
+        hard: { asked: 0, correct: 0 }
+    };
+    let questions = [];
+    let selectedCategory = null;
+
+    async function getCategories() {
+        startBtn.disabled = true;
+        try {
+            const response = await fetch(API_CATEGORY_URL);
+            if (!response.ok) throw new Error('Network response was not ok');
+            const data = await response.json();
+            categorySelect.innerHTML = ''; // Clear "Loading..."
+            data.trivia_categories.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.name;
+                categorySelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error("Could not fetch categories:", error);
+            categorySelect.innerHTML = '<option>Could not load categories. Please refresh.</option>';
+        } finally {
+            startBtn.disabled = false;
+        }
+    }
+
+    async function fetchAllQuestions(categoryId) {
+        const tempQuestions = new Set(); // Use a Set to avoid duplicate questions automatically
+
+        // --- Strategy 1: Try to fetch all questions in one go ---
+        let params = new URLSearchParams({
+            amount: TOTAL_QUESTIONS,
+            category: categoryId,
+            type: 'multiple'
+        });
+
+        try {
+            const response = await fetch(`${API_QUESTION_URL}?${params}`);
+            const data = await response.json();
+            if (data.response_code === 0) {
+                data.results.forEach(q => tempQuestions.add(q));
+            }
+        } catch (error) {
+            console.error("Error during initial bulk fetch:", error);
+        }
+
+        // --- Strategy 2: If not enough, fetch for each difficulty ---
+        if (tempQuestions.size < TOTAL_QUESTIONS) {
+            console.log("Bulk fetch was insufficient. Fetching by difficulty...");
+            const difficulties = ['easy', 'medium', 'hard'];
+            // Calculate how many more we need and divide among difficulties
+            const needed = TOTAL_QUESTIONS - tempQuestions.size;
+            const amountPerDiff = Math.ceil(needed / difficulties.length);
+
+            for (const diff of difficulties) {
+                if (tempQuestions.size >= TOTAL_QUESTIONS) break; // Stop if we have enough
+
+                params = new URLSearchParams({
+                    amount: amountPerDiff,
+                    category: categoryId,
+                    difficulty: diff,
+                    type: 'multiple'
+                });
+
+                try {
+                    const response = await fetch(`${API_QUESTION_URL}?${params}`);
+                    const data = await response.json();
+                    if (data.response_code === 0) {
+                        data.results.forEach(q => tempQuestions.add(q));
+                    }
+                } catch (error) {
+                    console.error(`Error fetching ${diff} questions:`, error);
+                }
+            }
+        }
+
+        return Array.from(tempQuestions); // Convert Set back to Array
+    }
+
+
+    function getNextDifficulty(currentDiff, isCorrect) {
+        if (isCorrect) {
+            if (currentDiff === 'easy') return 'medium';
+            if (currentDiff === 'medium') return 'hard';
+            return 'hard'; // Stays hard
+        } else {
+            if (currentDiff === 'hard') return 'medium';
+            if (currentDiff === 'medium') return 'easy';
+            return 'easy'; // Stays easy
+        }
+    }
+
+    // Calculates the final intelligence rating
+    function intelligenceRating(finalScore, diffHistory) {
+        if (finalScore <= Math.max(1, TOTAL_QUESTIONS / 3)) {
+            return "Beginner Thinker 🧩";
+        } else if (finalScore <= Math.max(2, (TOTAL_QUESTIONS * 2) / 3)) {
+            return "Smart Learner 📘";
+        } else {
+            const hardCount = diffHistory.filter(d => d === 'hard').length;
+            if (hardCount >= Math.max(1, TOTAL_QUESTIONS / 3)) {
+                return "Data Genius 🧠🚀";
+            }
+            return "Intelligent Mind 🔍";
+        }
+    }
+
+    // Calculates accuracy percentages
+    function calculateAccuracyStats() {
+        const accuracyByDiff = {};
+        for (const diffLevel of ['easy', 'medium', 'hard']) {
+            const asked = stats[diffLevel].asked;
+            const correct = stats[diffLevel].correct;
+            accuracyByDiff[diffLevel] = asked > 0 ? Math.round((correct / asked) * 100) : 0;
+        }
+        return accuracyByDiff;
+    }
+
+    function resetGame() {
+        score = 0;
+        currentQuestionIndex = 0;
+        difficulty = 'medium';
+        difficultyHistory = [];
+        stats = {
+            easy: { asked: 0, correct: 0 },
+            medium: { asked: 0, correct: 0 },
+            hard: { asked: 0, correct: 0 }
+        };
+        questions = [];
+        selectedCategory = null;
+
+        summaryScreen.classList.add('hidden');
+        quizScreen.classList.add('hidden');
+        setupScreen.classList.remove('hidden');
+    }
+
+    async function startGame() {
+        selectedCategory = categorySelect.value;
+        setupScreen.classList.add('hidden');
+        quizScreen.classList.remove('hidden');
+        questionText.textContent = 'Fetching questions, get ready...';
+
+        questions = await fetchAllQuestions(selectedCategory);
+        
+        if (questions.length < TOTAL_QUESTIONS) {
+            questionText.textContent = 'Could not fetch enough questions for this category. Please try another one.';
+            setTimeout(resetGame, 4000);
+            return;
+        }
+
+        difficultyHistory.push(difficulty);
+        displayQuestion();
+    }
+    
+    function displayQuestion() {
+        if (currentQuestionIndex >= TOTAL_QUESTIONS) {
+            showSummary();
+            return;
+        }
+
+        // Find a question that matches the current difficulty
+        let questionData = questions.find(q => q.difficulty === difficulty && !q.used);
+        
+        // Fallback if no question of the current difficulty is available
+        if (!questionData) {
+            questionData = questions.find(q => !q.used);
+        }
+
+        if(!questionData) { // If still no questions, end game
+            showSummary();
+            return;
+        }
+
+        questionData.used = true; // Mark question as used
+        stats[difficulty].asked += 1;
+
+        const currentQuestion = {
+            question: he.decode(questionData.question),
+            correctAnswer: he.decode(questionData.correct_answer),
+            options: [
+                ...questionData.incorrect_answers.map(a => he.decode(a)),
+                he.decode(questionData.correct_answer)
+            ].sort(() => Math.random() - 0.5) // Shuffle options
+        };
+
+        // Update UI elements
+        questionCounter.textContent = `Question ${currentQuestionIndex + 1} / ${TOTAL_QUESTIONS}`;
+        difficultyTracker.textContent = difficulty.toUpperCase();
+        difficultyTracker.className = 'px-3 py-1 text-sm font-bold text-white rounded-full'; // Reset class
+        if (difficulty === 'easy') difficultyTracker.classList.add('bg-green-500');
+        else if (difficulty === 'medium') difficultyTracker.classList.add('bg-yellow-500');
+        else difficultyTracker.classList.add('bg-red-500');
+
+        questionText.textContent = currentQuestion.question;
+        
+        optionsContainer.innerHTML = '';
+        currentQuestion.options.forEach(option => {
+            const button = document.createElement('button');
+            button.innerHTML = option;
+            button.className = 'answer-btn w-full p-3 bg-white border-2 border-gray-300 rounded-lg text-gray-700 font-semibold';
+            button.onclick = () => handleAnswer(option, currentQuestion.correctAnswer, button);
+            optionsContainer.appendChild(button);
+        });
+
+        feedbackArea.textContent = '';
+    }
+
+    function handleAnswer(selectedOption, correctAnswer, button) {
+        const isCorrect = selectedOption === correctAnswer;
+
+        // Disable all buttons after an answer is chosen
+        Array.from(optionsContainer.children).forEach(btn => {
+            btn.classList.add('disabled');
+            if (btn.innerHTML === correctAnswer) {
+                btn.classList.add('correct');
+            }
+        });
+        
+        if (isCorrect) {
+            score++;
+            stats[difficulty].correct += 1;
+            feedbackArea.textContent = '✅ Correct!';
+            feedbackArea.style.color = '#22c55e';
+        } else {
+            button.classList.add('incorrect');
+            feedbackArea.textContent = `❌ Incorrect! Answer: ${correctAnswer}`;
+            feedbackArea.style.color = '#ef4444';
+        }
+
+        difficulty = getNextDifficulty(difficulty, isCorrect);
+        difficultyHistory.push(difficulty);
+        currentQuestionIndex++;
+
+        setTimeout(displayQuestion, 2000); // Wait 2 seconds before next question
+    }
+
+    function showSummary() {
+        quizScreen.classList.add('hidden');
+        summaryScreen.classList.remove('hidden');
+
+        finalScoreEl.textContent = `${score} / ${TOTAL_QUESTIONS}`;
+        ratingEl.textContent = intelligenceRating(score, difficultyHistory);
+        trendEl.textContent = difficultyHistory.map(d => d.toUpperCase()).join(' → ');
+
+        // Plotting logic (from plotter.py)
+        const accuracyData = calculateAccuracyStats();
+        plotAccuracy(accuracyData);
+    }
+    
+    function plotAccuracy(accuracyData) {
+        if(accuracyChart) {
+            accuracyChart.destroy();
+        }
+        accuracyChart = new Chart(accuracyChartCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Easy', 'Medium', 'Hard'],
+                datasets: [{
+                    label: 'Accuracy (%)',
+                    data: [accuracyData.easy, accuracyData.medium, accuracyData.hard],
+                    backgroundColor: [
+                        'rgba(75, 192, 192, 0.6)',
+                        'rgba(255, 206, 86, 0.6)',
+                        'rgba(255, 99, 132, 0.6)'
+                    ],
+                    borderColor: [
+                        'rgba(75, 192, 192, 1)',
+                        'rgba(255, 206, 86, 1)',
+                        'rgba(255, 99, 132, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%'
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    title: {
+                        display: true,
+                        text: 'Accuracy by Difficulty Level'
+                    }
+                }
+            }
+        });
+    }
+
+    // A simple library to decode HTML entities that JavaScript doesn't handle natively
+    const he = {
+        decode: (str) => {
+            const textarea = document.createElement('textarea');
+            textarea.innerHTML = str;
+            return textarea.value;
+        }
+    };
+    startBtn.addEventListener('click', startGame);
+    playAgainBtn.addEventListener('click', resetGame);
+    
+    // Load categories when the page loads
+    getCategories();
+});
+</script>
+
+</body>
+</html>
+
