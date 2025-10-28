@@ -2,14 +2,6 @@
 import matplotlib.pyplot as plt
 
 def plot_accuracy(accuracy_by_diff):
-    """
-    Generates and displays a plot of the player's accuracy across different
-    difficulty levels.
-
-    Args:
-        accuracy_by_diff (dict): A dictionary with difficulty levels as keys
-                                 and accuracy percentages as values.
-    """
     levels = ["Easy", "Medium", "Hard"]
     # Ensure all keys exist and get the accuracy values in the correct order
     accuracies = [
